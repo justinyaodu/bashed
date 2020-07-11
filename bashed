@@ -1168,7 +1168,6 @@ event_input() {
 event_exit() {
 	terminal_normal
 }
-trap event_exit EXIT
 
 event_tstp() {
 	terminal_normal
@@ -1182,14 +1181,19 @@ event_tstp() {
 	# Re-enable the signal handler on resume.
 	trap event_tstp TSTP
 }
-trap event_tstp TSTP
 
 event_cont() {
 	terminal_editing
 	draw_all_flag=1
 	draw
 }
-trap event_cont CONT
+
+# Register signal handlers.
+event_init() {
+	trap event_exit EXIT
+	trap event_tstp TSTP
+	trap event_cont CONT
+}
 
 ######## File Operations ########
 
@@ -1230,6 +1234,8 @@ file_ask_filename() {
 ######## Main ########
 
 main() {
+	event_init
+
 	terminal_editing
 	clipboard_init
 	preferences_init
