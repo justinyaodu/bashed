@@ -1170,12 +1170,26 @@ event_exit() {
 }
 trap event_exit EXIT
 
-event_stop() {
+event_tstp() {
 	terminal_normal
-}
-trap event_stop STOP
 
-# TODO redraw the screen on continue
+	# Remove the signal handler temporarily.
+	trap - TSTP
+
+	# Suspend this script.
+	kill -SIGTSTP $$
+
+	# Re-enable the signal handler on resume.
+	trap event_tstp TSTP
+}
+trap event_tstp TSTP
+
+event_cont() {
+	terminal_editing
+	draw_all_flag=1
+	draw
+}
+trap event_cont CONT
 
 ######## File Operations ########
 
