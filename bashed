@@ -1,0 +1,1237 @@
+#!/bin/bash
+
+# Save frequently used tput sequences as variables.
+tput_civis="$(tput civis)"
+tput_cnorm="$(tput cnorm)"
+tput_el="$(tput el)"
+
+######## Keyboard Input ########
+
+# Set a global variable indicating the terminal type, which determines how
+# keystroke escape sequences will be parsed.
+case "${TERM}" in
+	xterm*)
+		term='xterm'
+		;;
+	linux*)
+		term='linux'
+		;;
+	*)
+		# Assume xterm compatibility.
+		term='xterm'
+		;;
+esac
+
+# Read the next byte from stdin.
+read_char='read -r -s -N 1'
+
+# Same as read_char, but non-blocking (returns non-zero if no input available).
+read_char_nonblocking="${read_char} -t 0.001"
+
+# Return values for input processing errors.
+input_unknown=1
+input_timeout=2
+
+# If a printable character is typed, set input_char to that character.
+# Otherwise, set input_key to the name of the pressed key and set the modifier
+# flags (input_ctrl, input_alt, and input_shift) appropriately. Return zero if
+# input was read successfully.
+input_get() {
+	input_char=''
+	input_key=''
+	input_ctrl=0
+	input_alt=0
+	input_shift=0
+
+	local char
+	$read_char char || exit 0 # Exit if there is no more input.
+
+	# Special cases for certain control characters.
+	case "${char}" in
+		$'\e')
+			# Process escape sequences separately.
+			read_esc
+			return
+			;;
+		$'\b')
+			input_key='Backspace'
+			return 0
+			;;
+		$'\177')
+			if [ "${term}" == 'xterm' ]; then
+				# Ctrl+Backspace in XTerm.
+				input_key='Backspace'
+				input_ctrl=1
+				return 0
+			else
+				# Backspace in the Linux console.
+				input_key='Backspace'
+				return 0
+			fi
+			;;
+		$'\t')
+			input_key='Tab'
+			return 0
+			;;
+		$'\n')
+			input_key='Enter'
+			return 0
+			;;
+	esac
+
+	if [[ $char =~ [[:print:]] ]]; then
+		# A printable character was typed.
+		input_char="${char}"
+		return 0
+	elif [[ $char =~ [[:cntrl:]] ]]; then
+		# A Control key combination was pressed.
+		input_key="$(echo -n "${char}" | tr '\000-\037' '@-_')"
+		input_ctrl=1
+		return 0
+	else
+		# This shouldn't happen.
+		return $input_unknown
+	fi
+}
+
+# Precondition: the preceding input is 'ESC'.
+read_esc() {
+	local char
+	if $read_char_nonblocking char; then
+		[ "${char}" == '[' ] || return $input_unknown
+		read_csi
+		return
+	else
+		# If no input immediately follows the Escape character, assume
+		# that this is not an escape sequence, and that the user just
+		# pressed the Escape key.
+		input_key='Escape'
+		return 0
+	fi
+}
+
+# Precondition: the preceding input is the control sequence introducer 'ESC['.
+read_csi() {
+	local char
+	$read_char_nonblocking char || return $input_timeout
+
+	if [ "${char}" == '1' ] && [ "${term}" == 'xterm' ]; then
+		read_char_assert ';' || return
+		read_modifiers || return
+
+		# Get the first character after reading the modifiers.
+		$read_char_nonblocking char || return $input_timeout
+	fi
+
+	# Cursor movement keys.
+	case "${char}" in
+		A)
+			input_key='Up'
+			return 0
+			;;
+		B)
+			input_key='Down'
+			return 0
+			;;
+		C)
+			input_key='Right'
+			return 0
+			;;
+		D)
+			input_key='Left'
+			return 0
+			;;
+		# Below keys are used by XTerm, but not the Linux console.
+		F)
+			input_key='End'
+			return 0
+			;;
+		H)
+			input_key='Home'
+			return 0
+			;;
+	esac
+
+	# Don't set the input_key variable until the rest of the escape sequence
+	# is properly parsed.
+	local input_key_temp
+
+	# Other keys.
+	case "${char}" in
+		2)
+			input_key_temp='Insert'
+			;;
+		3)
+			input_key_temp='Delete'
+			;;
+		5)
+			input_key_temp='PageUp'
+			;;
+		6)
+			input_key_temp='PageDown'
+			;;
+		# Below keys are used by the Linux console, but not XTerm.
+		1)
+			input_key_temp='Home'
+			;;
+		4)
+			input_key_temp='End'
+			;;
+		*)
+			return $input_unknown
+	esac
+	
+	$read_char_nonblocking char || return $input_timeout
+	case "${char}" in
+		';')
+			read_modifiers || return
+			read_char_assert '~' || return
+			;;
+		'~')
+			;;
+		*)
+			return $input_unknown
+	esac
+
+	input_key="${input_key_temp}"
+}
+
+# read_char_assert <char>
+# Read a character from stdin, returning zero if it is the specified character.
+read_char_assert() {
+	local char
+	$read_char_nonblocking char || return $input_timeout
+	[ "${char}" == "${1}" ] || return $input_unknown
+}
+
+# Precondition: the next character from stdin is expected to be a modifier mask.
+read_modifiers() {
+	local mask
+	$read_char_nonblocking mask || return $input_timeout
+	[[ $mask =~ [1-8] ]] || return $input_unknown
+
+	# Subtract 1 to get the actual bitmask.
+	(( mask-- ))
+
+	if (( mask >= 4 )); then
+		input_ctrl=1
+		(( mask -= 4 ))
+	fi
+
+	if (( mask >= 2 )); then
+		input_alt=1
+		(( mask -= 2 ))
+	fi
+
+	if (( mask >= 1 )); then
+		input_shift=1
+		(( mask-- ))
+	fi
+}
+
+# Show the keyboard input in the console.
+input_test() {
+	while :; do
+		input_get || echo "Non-zero return value: $?"
+		printf "char:'%s'\tkey:'%s'\tctrl:%d\talt:%d\tshift:%d\n" \
+				"${input_char}" "${input_key}" "${input_ctrl}" \
+				"${input_alt}" "${input_shift}"
+	done
+}
+
+######## Terminal Settings ########
+
+# Set terminal settings when using the editor.
+terminal_editing() {
+	# Do not print the user's keystrokes.
+	stty -echo
+}
+
+# Set terminal settings when leaving the editor.
+terminal_normal() {
+	# Turn formatting off.
+	tput sgr0
+
+	# Make the cursor visible.
+	tput cnorm
+
+	# Print the user's keystrokes.
+	stty echo
+
+	# Move the cursor to the bottom of the display.
+	tput cup $vp_height 0
+	echo
+}
+
+######## Tab Expansion and Column Conversion ########
+
+# tab_expand <line_index>
+# Convert tab characters (\t) to appropriate numbers of spaces using the
+# tab_stop variable. The expanded string is stored in the variable tab_expand_v.
+tab_expand_regex=$'^([^\t]*)\t(.*)$'
+tab_expand() {
+	tab_expand_v="${lines[$1]}"
+	while [[ $tab_expand_v =~ $tab_expand_regex ]]; do
+		# The part of the line before the tab character.
+		tab_expand_v="${BASH_REMATCH[1]}"
+
+		# Insert spaces to reach the next multiple of the tab stop.
+		local num_spaces=$(( tab_stop - ${#tab_expand_v} % tab_stop ))
+		tab_expand_v+="$(printf "%${num_spaces}s")"
+
+		# The part of the line after the tab character.
+		tab_expand_v+="${BASH_REMATCH[2]}"
+	done
+}
+
+# tab_expand_col [row col]
+# Given a position (row and column) in the unexpanded text, compute the
+# corresponding column position after tab expansion is performed. If the
+# position is not specified, it defaults to the cursor position.
+tab_expand_col() {
+	local r=${1:-$cr}
+	local c_target=${2:-$cc}
+	local line="${lines[$r]}"
+
+	tab_expand_col_v=0
+	local c
+	for (( c = 0; c < c_target; c++ )); do
+		if [ "${line:$c:1}" == $'\t' ]; then
+			(( tab_expand_col_v += tab_stop \
+					- tab_expand_col_v % tab_stop ))
+		else
+			(( tab_expand_col_v++ ))
+		fi
+	done
+}
+
+# tab_unexpand_col <row> <expanded_col>
+# Given a position (row and column) in the tab-expanded text, compute the
+# corresponding column position before tab expansion. If the provided position
+# is in the middle of an expanded tab, the column position left of that tab
+# character is returned.
+tab_unexpand_col() {
+	local r=$1
+	local exp_c_target=$2
+	local line="${lines[$r]}"
+
+	# Avoid recomputing the line length at each loop iteration.
+	local line_length=${#line}
+
+	local exp_c=0
+	tab_unexpand_col_v=0
+	while (( tab_unexpand_col_v < line_length )); do
+		# Move one character ahead.
+		if [ "${line:$tab_unexpand_col_v:1}" == $'\t' ]; then
+			(( exp_c += tab_stop - exp_c % tab_stop ))
+		else
+			(( exp_c++ ))
+		fi
+		(( tab_unexpand_col_v++ ))
+
+		# Check if the target expanded column has been reached.
+		if (( exp_c == exp_c_target )); then
+			# Exact match.
+			return
+		elif (( exp_c > exp_c_target )); then
+			# Overshot: desired position is in the middle of a tab.
+			# Return the position before that tab character.
+			(( tab_unexpand_col_v-- ))
+			return
+		fi
+	done
+
+	# If this part is reached, then the line is too short to reach the
+	# desired column. The return variable is set to the rightmost valid
+	# column position.
+}
+
+######## Cursor and Selection ########
+
+# cursor_move <row> <col>
+# Move the cursor to the specified row and column of the document. If selection
+# mode is not active, the selection anchor will be moved along with the cursor.
+cursor_move() {
+	if (( mode_selecting )); then
+		# Redraw the part of the screen that the cursor moved over.
+		draw_request $(( $1 < cr ? $1 : cr )) $(( $1 > cr ? $1 : cr ))
+	fi
+
+	cr=$1
+	cc=$2
+
+	if (( !mode_selecting )); then
+		sr=$cr
+		sc=$cc
+	fi
+
+	selection_update
+}
+
+# Beginning of line.
+cursor_bol() {
+	cursor_move $cr 0
+}
+
+# End of line.
+cursor_eol() {
+	cursor_move $cr ${#lines[$cr]}
+}
+
+# Beginning of document.
+cursor_beginning() {
+	cursor_move 0 0
+}
+
+# End of document.
+cursor_end() {
+	# Index of the last line.
+	local new_r=$(( ${#lines[@]} - 1 ))
+
+	cursor_move $new_r ${#lines[$new_r]}
+}
+
+cursor_up() {
+	if (( !mode_selecting && selection_exists )); then
+		selection_deselect 'start'
+		return
+	fi
+
+	# Is there a line above?
+	if (( cr > 0 )); then
+		# Row index of the line above.
+		local new_r=$(( cr - 1 ))
+
+		# Compute the current cursor position's tab expanded column.
+		tab_expand_col
+
+		# Compute the new cursor position's unexpanded column.
+		tab_unexpand_col $new_r $tab_expand_col_v
+
+		cursor_move $new_r $tab_unexpand_col_v
+	elif (( up_down_jump )); then
+		# On the first line: move to its beginning.
+		cursor_beginning
+	fi
+}
+
+cursor_down() {
+	if (( !mode_selecting && selection_exists )); then
+		selection_deselect 'end'
+		return
+	fi
+
+	# Is there a line below?
+	if (( cr + 1 < ${#lines[@]} )); then
+		# Row index of the line below.
+		local new_r=$(( cr + 1 ))
+
+		# See comments in cursor_up.
+		tab_expand_col
+		tab_unexpand_col $new_r $tab_expand_col_v
+		cursor_move $new_r $tab_unexpand_col_v
+	elif (( up_down_jump )); then
+		# On the last line: move to its end.
+		cursor_end
+	fi
+}
+
+cursor_left() {
+	if (( !mode_selecting && selection_exists )); then
+		selection_deselect 'start'
+		return
+	fi
+
+	if (( mode_move_by_words )); then
+		cursor_left_word
+	else
+		cursor_left_char
+	fi
+}
+
+cursor_right() {
+	if (( !mode_selecting && selection_exists )); then
+		selection_deselect 'end'
+		return
+	fi
+
+	if (( mode_move_by_words )); then
+		cursor_right_word
+	else
+		cursor_right_char
+	fi
+}
+
+cursor_left_char() {
+	if (( cc > 0 )); then
+		# Move to the left.
+		cursor_move $cr $(( cc - 1 ))
+	elif (( left_right_wrap && cr > 0 )); then
+		# Move to the end of the previous line.
+		local nr=$(( cr - 1 ))
+		cursor_move "${nr}" "${#lines[$nr]}"
+	fi
+}
+
+cursor_right_char() {
+	if (( cc < ${#lines[$cr]} )); then
+		# Move to the right.
+		cursor_move $cr $(( cc + 1 ))
+	elif (( left_right_wrap && cr + 1 < ${#lines[@]} )); then
+		# Move to the beginning of the next line.
+		cursor_move $(( cr + 1 )) 0
+	fi
+}
+
+cursor_left_word() {
+	# Defer to cursor_left_char behaviour for beginning of line.
+	if (( cc == 0 )); then
+		cursor_left_char
+		return
+	fi
+
+	local line="${lines[$cr]}"
+
+	local nc=$(( cc - 1 ))
+	while (( nc > 0 )) && \
+			[[ ${line:$(( nc - 1 )):1} =~ $word_char ]]; do
+		(( nc-- ))
+	done
+	cursor_move $cr $nc
+}
+
+cursor_right_word() {
+	# Defer to cursor_right behaviour for end of line.
+	if (( cc == ${#lines[$cr]} )); then
+		cursor_right_char
+		return
+	fi
+
+	local line="${lines[$cr]}"
+	local line_length="${#line}"
+
+	local nc=$(( cc + 1 ))
+	while (( nc < line_length )) && \
+			[[ ${line:$nc:1} =~ $word_char ]]; do
+		(( nc++ ))
+	done
+	cursor_move $cr $nc
+}
+
+# Recompute whether anything is selected, as well as the positions of the
+# start and end of the selection.
+selection_update() {
+	selection_exists=$(( cr != sr || cc != sc ))
+
+	if (( cr < sr || (cr == sr && cc < sc) )); then
+		# The cursor is at the start of the selection.
+		ar=$cr
+		ac=$cc
+		br=$sr
+		bc=$sc
+	else
+		# The cursor is at the end of the selection.
+		ar=$sr
+		ac=$sc
+		br=$cr
+		bc=$cc
+	fi
+}
+
+# selection_deselect [mode]
+# Deselect the active selection. If mode is 'start' or 'end', the cursor is
+# moved to the start or end of the selection, respectively. If mode is not
+# provided, the cursor remains in its current position.
+selection_deselect() {
+	# Redraw everything that will be deselected.
+	draw_request $ar $br
+
+	case "${1}" in
+		start)
+			cr=$ar
+			cc=$ac
+			;;
+		end)
+			cr=$br
+			cc=$bc
+			;;
+	esac
+
+	sr=$cr
+	sc=$cc
+
+	selection_update
+}
+
+# Get the currently selected text. Returns nonzero if nothing is selected.
+selection_get() {
+	(( selection_exists )) || return 1
+
+	# Special case for a selection on a single line.
+	if (( ar == br )); then
+		selection_get_v="${lines[$ar]:$ac:$(( bc - ac ))}"
+		return
+	fi
+
+	# The selected portion of the first line.
+	selection_get_v="${lines[$ar]:$ac}"
+	selection_get_v+=$'\n'
+
+	# All fully selected lines.
+	local line
+	for line in "${lines[@]:$(( ar + 1 )):$(( br - ar - 1))}"; do
+		selection_get_v+="${line}"
+		selection_get_v+=$'\n'
+	done
+
+	# The selected portion of the last line.
+	selection_get_v+="${lines[$br]:0:$bc}"
+}
+
+# Delete the currently selected text. Returns nonzero if nothing is selected.
+selection_delete() {
+	(( selection_exists )) || return 1
+
+	# Redraw the single line that is changed but not completely deleted.
+	draw_request $ar $ar $(( br - ar ))
+
+	if (( ar == br )); then
+		# The selection starts and ends on the same line.
+		lines[$ar]="${lines[$ar]:0:$ac}${lines[$ar]:$bc}"
+	else
+		# Combine the unselected portions of the first and last lines.
+		lines[$ar]="${lines[$ar]:0:$ac}${lines[$br]:$bc}"
+
+		# Remove lines from the first selected line (exclusive) to the
+		# last selected line (inclusive).
+		lines=( "${lines[@]:0:$(( ar + 1 ))}" \
+				"${lines[@]:$(( br + 1 ))}" )
+	fi
+
+	selection_deselect 'start'
+}
+
+# Initialize the cursor and selection variables.
+cursor_selection_init() {
+	cursor_beginning
+}
+
+######## Insertion ########
+
+# insert_text <text>
+# Insert text which does not contain newlines.
+insert_text() {
+	# Replace any active selection.
+	selection_delete
+
+	# Insert the text into the current line, after the cursor.
+	lines[$cr]="${lines[$cr]:0:$cc}${1}${lines[$cr]:$cc}"
+
+	draw_request $cr $cr 0
+
+	# Move the cursor to the end of the inserted text.
+	cursor_move $cr $(( cc + ${#1} ))
+}
+
+# Insert a newline at the current cursor position.
+insert_newline() {
+	# Replace any active selection.
+	selection_delete
+
+	lines=( "${lines[@]:0:$cr}" \
+			"${lines[$cr]:0:$cc}" \
+			"${lines[$cr]:$cc}" \
+			"${lines[@]:$(( cr + 1 ))}" )
+
+	draw_request $cr $(( cr + 1 )) 1
+
+	cursor_move $(( cr + 1 )) 0
+}
+
+# insert_lines <text>
+# Insert text which may contain newlines.
+insert_lines() {
+	# Replace any active selection.
+	selection_delete
+
+	# Separate the lines of the input, keeping the newlines at the end of
+	# each line.
+	local -a input_lines
+	readarray input_lines <<< "${1}"
+
+	# Remove the final newline appended from using a here string.
+	input_lines[-1]="${input_lines[-1]:0:$(( ${#input_lines[-1]} - 1 ))}"
+
+	local line has_newline
+	for line in "${input_lines[@]}"; do
+		# Remove the newline at the end of the line, if any.
+		if [ "${line:(-1)}" == $'\n' ]; then
+			has_newline=1
+			line="${line:0:(-1)}"
+		else
+			has_newline=0
+		fi
+		
+		insert_text "${line}"
+
+		if (( has_newline )); then
+			insert_newline
+		fi
+	done
+}
+
+######## Clipboard ########
+
+# Return zero if xclip can be used to provide clipboard functionality.
+clipboard_xclip_available() {
+	# Check if the X server is running.
+	[ "${DISPLAY}" ] || return 1
+
+	# Return 0 if the xclip command is available.
+	xclip -version &> /dev/null
+}
+
+# Copy the selected text to the clipboard. Return nonzero if nothing is
+# selected.
+clipboard_copy() {
+	selection_get || return 1
+	if (( clipboard_use_xclip )); then
+		echo -n "${selection_get_v}" | xclip -in
+	else
+		clipboard_text="${selection_get_v}"
+	fi
+	draw_message "Copied ${#selection_get_v} characters to clipboard."
+}
+
+# Cut the selected text to the clipboard. Return nonzero if nothing is
+# selected.
+clipboard_cut() {
+	clipboard_copy || return 1
+	selection_delete
+
+	# This message overrides the one given by clipboard_copy.
+	draw_message "Cut ${#selection_get_v} characters to clipboard."
+}
+
+# Paste the selected text from the clipboard.
+clipboard_paste() {
+	if (( clipboard_use_xclip )); then
+		# Get the clipboard contents, with an extra character appended
+		# so that any trailing newlines are not stripped by the command
+		# substitution.
+		clipboard_text="$(cat <(xclip -out) <(echo -n '!'))"
+
+		# Remove the extra character.
+		clipboard_text="${clipboard_text:0:$((\
+				${#clipboard_text} - 1 ))}"
+	fi
+
+	if [ "${clipboard_text}" ]; then
+		insert_lines "${clipboard_text}"
+		draw_message "Pasted ${#clipboard_text} characters."
+	else
+		draw_message 'Nothing to paste.'
+	fi
+}
+
+# Initialize the clipboard.
+clipboard_init() {	
+	if clipboard_xclip_available; then
+		clipboard_use_xclip=1
+	else
+		clipboard_use_xclip=0
+	fi
+}
+
+######## Viewport ########
+
+# Update the viewport dimensions using tput.
+viewport_update_dimensions() {
+	vp_height=$(( $(tput lines) - 1 ))
+	vp_width=$(tput cols)
+
+	vp_max_r=$(( vp_min_r + vp_height - 1 ))
+	vp_max_c=$(( vp_min_c + vp_width - 1 ))
+}
+
+# viewport_scroll <lines>
+# Scroll the viewport downward by the specified number of lines. Negative values
+# correspond to scrolling upward. This does not affect what is displayed in the
+# terminal.
+viewport_scroll() {
+	(( vp_min_r += $1 ))
+	(( vp_max_r += $1 ))
+}
+
+# viewport_pan <columns>
+# Pan the viewport to the right by the specified number of columns. Negative
+# values correspond to panning leftward. This does not affect what is displayed
+# in the terminal.
+viewport_pan() {
+	(( vp_min_c += $1 ))
+	(( vp_max_c += $1 ))
+}
+
+# Compute the number of lines that the viewport must be scrolled downward to
+# keep the cursor visible. Negative values correspond to scrolling upward.
+# Returns zero if scrolling is necessary.
+viewport_required_scroll() {
+	if (( cr < vp_min_r )); then
+		viewport_required_scroll_v=$(( cr - vp_min_r ))
+		return 0
+	elif (( cr > vp_max_r )); then
+		viewport_required_scroll_v=$(( cr - vp_max_r ))
+		return 0
+	else
+		viewport_required_scroll_v=0
+		return 1
+	fi
+}
+
+# Compute the number of columns that the viewport must be panned to the right
+# to keep the cursor visible. Negative values correspond to panning leftward.
+# Returns zero if panning is necessary.
+viewport_required_pan() {
+	tab_expand_col
+	if (( tab_expand_col_v < vp_min_c )); then
+		viewport_required_pan_v=$(( tab_expand_col_v - vp_min_c ))
+		return 0
+	elif (( tab_expand_col_v > vp_max_c )); then
+		viewport_required_pan_v=$(( tab_expand_col_v - vp_max_c ))
+		return 0
+	else
+		viewport_required_pan_v=0
+		return 1
+	fi
+}
+
+# Initialize viewport variables.
+viewport_init() {
+	vp_min_r=0
+	vp_min_c=0
+	viewport_update_dimensions
+}
+
+######## Rendering ########
+
+# draw_request <first_line> <last_line> [delta]
+# Request a range of lines to be redrawn. If any lines were inserted or removed,
+# the change in the number of lines must be specified.
+draw_request() {
+	if (( draw_first == -1 || draw_first > $1 )); then
+		draw_first=$1
+	fi
+
+	if (( draw_last == -1 || draw_last < $2 )); then
+		draw_last=$2
+	fi
+
+	draw_delta+=${3:-0}
+}
+
+# draw_line_text <line>
+# Tab expand the specified line and clip it to fit in the viewport.
+draw_line_text() {
+	# If the line is out of range, use the empty string.
+	if (( $1 >= ${#lines[@]} )); then
+		draw_line_text_v=''
+		return
+	fi
+
+	tab_expand $1
+
+	# Clip the expanded line to fit in the viewport.
+	draw_line_text_v="${tab_expand_v:$vp_min_c:$vp_width}"
+
+	# Add a space at the end to represent the newline.
+	(( ${#draw_line_text_v} < vp_width )) && draw_line_text_v+=' '
+}
+
+# draw_lines <from> <to>
+# Redraw the specified range of lines (inclusive).
+draw_lines() {
+	# Do not draw lines that are outside the viewport.
+	local r_min=$(( $1 < vp_min_r ? vp_min_r : $1 ))
+	local r_max=$(( $2 > vp_max_r ? vp_max_r : $2 ))
+
+	# Move the cursor to the start of the first line to draw.
+	tput cup $(( r_min - vp_min_r )) 0
+
+	local r
+	for (( r = r_min; r <= r_max; r++ )); do
+		# Clear the current line.
+		echo -n "${tput_el}"
+
+		draw_line_text $r
+
+		if (( selection_exists && r >= ar && r <= br )); then
+			# Insert the end of selection formatting. (This is
+			# inserted before the start of selection formatting, so
+			# that the string indexing is not affected by the
+			# inserted characters.)
+			local end_col
+			if (( r == br )); then
+				tab_expand_col $br $bc
+				end_col=$(( tab_expand_col_v - vp_min_c ))
+			else
+				end_col=${#draw_line_text_v}
+			fi
+			draw_line_text_v="${draw_line_text_v:0:$end_col}\
+${selection_format_end}${draw_line_text_v:$end_col}"
+
+			# Insert the start of selection formatting.
+			local start_col
+			if (( r == ar )); then
+				tab_expand_col $ar $ac
+				start_col=$(( tab_expand_col_v - vp_min_c ))
+			else
+				start_col=0
+			fi
+			draw_line_text_v="${draw_line_text_v:0:$start_col}\
+${selection_format_start}${draw_line_text_v:$start_col}"
+		fi
+
+		# Output the line of text and move the cursor to the beginning
+		# of the next line. (This is still acceptable for the last line
+		# of text in the viewport, because the last line of the viewport
+		# is the second last line of the display.)
+		echo "${draw_line_text_v}"
+	done
+}
+
+# Draw the parts of the viewport which need to be redrawn.
+draw_viewport() {
+	# Calculate how much the viewport must be scrolled/panned to keep the
+	# cursor visible.
+	viewport_required_scroll
+	viewport_required_pan
+
+	# Redraw everything if explicitly requested (e.g. on window resize).
+	# The entire viewport has to be redrawn when panning.
+	# Redraw everything if any lines are inserted or deleted. It should be
+	# possible to handle this more intelligently, but it doesn't seem worth
+	# the effort.
+	if (( draw_all_flag || viewport_required_pan_v || draw_delta )); then
+		draw_viewport_all
+		return
+	fi
+
+	# Scroll the lines in the viewport.
+	if (( viewport_required_scroll_v )); then
+		viewport_scroll $viewport_required_scroll_v
+		draw_scroll $viewport_required_scroll_v
+
+		if (( viewport_required_scroll_v > 0 )); then
+			# Scrolled downward by N: draw the bottom N lines.
+			draw_lines $(( vp_max_r - viewport_required_scroll_v \
+					- 1 )) $vp_max_r
+		else
+			# Scrolled upward by N: draw the top N lines.
+			draw_lines $vp_min_r $(( vp_min_r \
+					- viewport_required_scroll_v - 1 ))
+		fi
+	fi
+
+	# Draw any changed lines.
+	if (( draw_first != -1 )); then
+		draw_lines $draw_first $draw_last
+	fi
+
+	draw_request_clear
+}
+
+# draw_scroll <lines>
+# Scroll the lines displayed on the screen upward by the specified amount.
+# (This corresponds to moving the viewport downward.) Negative amounts
+# correspond to scrolling the displayed lines downward.
+draw_scroll() {
+	if (( $1 > 0 )); then
+		# Go to the bottom left corner (precondition for ind).
+		tput cup $vp_height 0
+
+		tput indn $1
+	else
+		# Go to the top left corner (precondition for ri).
+		tput home
+
+		tput rin $(( -$1 ))
+	fi
+}
+
+# Clear the draw request variables after drawing is complete.
+draw_request_clear() {
+	draw_all_flag=0
+	draw_first=-1
+	draw_last=-1
+	draw_delta=0
+}
+
+# Redraw the entire viewport, handling any required scrolling and panning.
+# Assumes that the required scroll and pan amounts have already been computed.
+draw_viewport_all() {
+	viewport_scroll $viewport_required_scroll_v
+	viewport_pan $viewport_required_pan_v
+	draw_lines $vp_min_r $vp_max_r
+	draw_request_clear
+}
+
+# draw_message <message>
+# Show a message on the status line.
+draw_message() {
+	draw_message_pending="${1}"
+}
+
+# Output a status line at the bottom of the screen.
+draw_status_line() {
+	# Go to the line below the viewport.
+	tput cup $vp_height 0
+
+	# Clear the current line.
+	echo -n "${tput_el}"
+
+	if [ "${draw_message_pending}" ]; then
+		echo -n "${draw_message_pending}"
+		draw_message_pending=''
+		return
+	fi
+
+	# The line number and column number.
+	echo -n "$(( cr + 1 )),$(( cc + 1 ))"
+
+	# The tab-expanded column number.
+	tab_expand_col
+	echo -n "-$(( tab_expand_col_v + 1 ))"
+
+	# The selection anchor position.
+	if (( selection_exists )); then
+		echo -n " $(( sr + 1 )),$(( sc + 1 ))"
+		tab_expand_col $sr $sc
+		echo -n "-$(( tab_expand_col_v + 1 ))"
+	fi
+}
+
+# Initialize the display.
+draw_init() {
+	# Initialize the draw request variables.
+	draw_request_clear
+
+	# Draw the display for the first time.
+	clear
+	draw_all_flag=1
+	draw
+}
+
+# Redraw the display.
+draw() {
+	# Hide the cursor while drawing.
+	echo -n "${tput_civis}"
+
+	draw_viewport
+	draw_status_line
+
+	# Set the cursor position.
+	tab_expand_col
+	tput cup $(( cr - vp_min_r )) $(( tab_expand_col_v - vp_min_c ))
+
+	# Make the cursor visible again.
+	echo -n "${tput_cnorm}"
+}
+
+######## Preferences ########
+
+# Initialize the preferences variables.
+preferences_init() {
+	# Source the user's preferences file, if it exists.
+	[ -f "${HOME}/.bashedrc" ] && source "${HOME}/.bashedrc"
+
+	# Spacing between tab stops.
+	[[ $tab_stop =~ [0-9]+ ]] || tab_stop=8
+
+	# Whether the cursor should go to the previous line when pressing Left
+	# at the beginning of a line, and go to the next line when pressing
+	# Right at the end of a line.
+	[[ $left_right_wrap =~ [01] ]] || left_right_wrap=1
+
+	# Whether the cursor should jump to the beginning of the line when
+	# pressing Up at the first line, and jump to the end of the line when
+	# pressing Down at the last line.
+	[[ $up_down_jump =~ [01] ]] || up_down_jump=1
+
+	# Define what characters should count as part of a word.
+	word_char="${word_char:-"[[:alpha:][:digit:]_]"}"
+
+	# Escape sequences used to format selected text.
+	selection_format_start="${selection_format_start:-$(\
+			tput setab 4; tput setaf 0)}"
+	selection_format_end="${selection_format_end:-$(tput sgr0)}"
+}
+
+######## Event Handling ########
+
+# Handle new input from input_get.
+event_input() {
+	if [ "${input_char}" ]; then
+		mode_selecting=0
+		mode_move_by_words=0
+
+		# Type the character.
+		insert_text "${input_char}"
+		return
+	fi
+
+	mode_selecting=$input_shift
+	mode_move_by_words=$input_ctrl
+
+	case "${input_key}" in
+		Up)
+			cursor_up
+			;;
+		Down)
+			cursor_down
+			;;
+		Left)
+			cursor_left
+			;;
+		Right)
+			cursor_right
+			;;
+		Home)
+			if (( input_ctrl )); then
+				cursor_beginning
+			else
+				cursor_bol
+			fi
+			;;
+		End)
+			if (( input_ctrl )); then
+				cursor_end
+			else
+				cursor_eol
+			fi
+			;;
+		Tab)
+			insert_text $'\t'
+			;;
+		Enter)
+			(( selection_exists )) && selection_delete
+			insert_newline
+			;;
+		Backspace)
+			if (( selection_exists )); then
+				selection_delete
+			else
+				# Delete the character to the left of the
+				# cursor (which could be the newline ending the
+				# previous line, if left_right_wrap is true).
+				mode_selecting=1
+				cursor_left
+				selection_delete
+			fi
+			;;
+		Delete)
+			if (( selection_exists )); then
+				selection_delete
+			else
+				# Delete the character to the right of the
+				# cursor (which could be the newline ending this
+				# line, if left_right_wrap is true).
+				mode_selecting=1
+				cursor_right
+				selection_delete
+			fi
+			;;
+		A)
+			# Select all.
+			mode_selecting=0
+			cursor_beginning
+			mode_selecting=1
+			cursor_end
+			;;
+		D)
+			exit 0
+			;;
+		P)
+			file_save
+			;;
+		V)
+			clipboard_paste
+			;;
+		X)
+			clipboard_cut
+			;;
+		Y)
+			clipboard_copy
+			;;
+	esac
+}
+
+event_exit() {
+	terminal_normal
+}
+trap event_exit EXIT
+
+event_stop() {
+	terminal_normal
+}
+trap event_stop STOP
+
+# TODO redraw the screen on continue
+
+######## File Operations ########
+
+# file_init [path]
+# Open the specified file (if provided), or create an empty buffer.
+file_init() {
+	file_path="${1}"
+
+	if [ -e "${file_path}" ]; then
+		readarray -t lines <<< "$(<"${file_path}")"
+	else
+		lines=('')
+	fi
+
+	cursor_selection_init
+	viewport_init
+	draw_init
+}
+
+# Save the current buffer.
+file_save() {
+	[ -z "${file_path}" ] && file_ask_filename
+
+	printf '%s\n' "${lines[@]}" > "${file_path}"
+}
+
+# Prompt the user to select a file.
+file_ask_filename() {
+	terminal_normal
+	while :; do
+		read -er -p 'Enter filename: ' file_path
+		[ "${file_path}" ] && break
+		echo 'No filename entered.'
+	done
+	terminal_editing
+}
+
+######## Main ########
+
+main() {
+	terminal_editing
+	clipboard_init
+	preferences_init
+
+	file_init "${1}"
+
+	while :; do
+		# Skip invalid input.
+		input_get || continue
+
+		# Process input.
+		event_input
+
+		# Redraw the display.
+		draw
+	done
+}
+
+main "${@}"
