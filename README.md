@@ -49,3 +49,7 @@ Bash is not known for being particularly fast. To achieve acceptable performance
 * Uses Bash built-ins whenever possible
 * Avoids subshells by using global variables to return values from functions
 * Only redraws the parts of the display that changed since the last frame
+
+## License
+
+`bashed` is licensed under the [MIT License](LICENSE.md).
