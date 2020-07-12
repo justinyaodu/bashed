@@ -1039,9 +1039,9 @@ $(( tab_expand_col_v + 1 ))"
 		left_text+=' [modified]'
 	fi
 
-	# Add a space to provide visual separation if this cuts off the text
-	# on the left.
-	local right_text=" ${cursor_pos}"
+	# Add a space on the left (to provide visual separation if it cuts off
+	# the text on the left) and show the help shortcut.
+	local right_text=" ${cursor_pos}    Help: Ctrl+/"
 
 	# Go to the line below the viewport.
 	tput cup $vp_height 0
