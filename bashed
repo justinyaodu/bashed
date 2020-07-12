@@ -955,11 +955,16 @@ draw_scroll() {
 		# Go to the bottom left corner (precondition for ind).
 		tput cup $vp_height 0
 
+		# Clear the statusbar so it doesn't flicker when scrolling.
+		echo -n "${tput_el}"
+
+		# Scroll the lines upward.
 		tput indn $1
 	else
 		# Go to the top left corner (precondition for ri).
 		tput home
 
+		# Scroll the lines downward.
 		tput rin $(( -$1 ))
 	fi
 }
