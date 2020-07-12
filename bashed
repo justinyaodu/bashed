@@ -1032,11 +1032,11 @@ $(( tab_expand_col_v + 1 ))"
 		else
 			left_text='[new buffer]'
 		fi
-	fi
 
-	# Show whether the file has been modified.
-	if (( file_modified )); then
-		left_text+=' [modified]'
+		# Show whether the file has been modified.
+		if (( file_modified )); then
+			left_text+=' [modified]'
+		fi
 	fi
 
 	# Add a space on the left (to provide visual separation if it cuts off
