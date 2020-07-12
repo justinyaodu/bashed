@@ -631,6 +631,8 @@ selection_delete() {
 	fi
 
 	selection_deselect 'start'
+
+	file_modified=1
 }
 
 # Initialize the cursor and selection variables.
@@ -648,6 +650,7 @@ insert_text() {
 
 	# Insert the text into the current line, after the cursor.
 	lines[$cr]="${lines[$cr]:0:$cc}${1}${lines[$cr]:$cc}"
+	file_modified=1
 
 	draw_request $cr $cr 0
 
@@ -664,6 +667,7 @@ insert_newline() {
 			"${lines[$cr]:0:$cc}" \
 			"${lines[$cr]:$cc}" \
 			"${lines[@]:$(( cr + 1 ))}" )
+	file_modified=1
 
 	draw_request $cr $(( cr + 1 )) 1
 
@@ -1024,6 +1028,11 @@ $(( tab_expand_col_v + 1 ))"
 		left_text="${file_path:-[new buffer]}"
 	fi
 
+	# Show whether the file has been modified.
+	if (( file_modified )); then
+		left_text+=' [modified]'
+	fi
+
 	# Add a space to provide visual separation if this cuts off the text
 	# on the left.
 	local right_text=" ${cursor_pos}"
@@ -1263,6 +1272,8 @@ file_init() {
 		lines=('')
 	fi
 
+	file_modified=0
+
 	cursor_selection_init
 	viewport_init
 	draw_init
@@ -1275,6 +1286,8 @@ file_save() {
 	printf '%s\n' "${lines[@]}" > "${file_path}"
 
 	draw_message "Saved file \"${file_path}\"."
+
+	file_modified=0
 }
 
 # Prompt the user to select a file.
