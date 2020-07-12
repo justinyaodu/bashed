@@ -955,7 +955,7 @@ draw_scroll() {
 		# Go to the bottom left corner (precondition for ind).
 		tput cup $vp_height 0
 
-		# Clear the statusbar so it doesn't flicker when scrolling.
+		# Clear the status line so it doesn't flicker when scrolling.
 		echo -n "${tput_el}"
 
 		# Scroll the lines upward.
@@ -994,31 +994,41 @@ draw_message() {
 
 # Output a status line at the bottom of the screen.
 draw_status_line() {
+	# The line number, column number, and tab-expanded column number.
+	tab_expand_col
+	local cursor_pos="$(( cr + 1 )),$(( cc + 1 ))-\
+$(( tab_expand_col_v + 1 ))"
+
+	# Status message (if any), or show the filename.
+	local left_text
+	if [ "${draw_message_pending}" ]; then
+		left_text="${draw_message_pending}"
+		draw_message_pending=''
+	else
+		left_text="${file_path}"
+	fi
+
+	# Add a space to provide visual separation if this cuts off the text
+	# on the left.
+	local right_text=" ${cursor_pos}"
+
 	# Go to the line below the viewport.
 	tput cup $vp_height 0
 
-	# Clear the current line.
+	# Clear the previous status line text.
 	echo -n "${tput_el}"
 
-	if [ "${draw_message_pending}" ]; then
-		echo -n "${draw_message_pending}"
-		draw_message_pending=''
-		return
-	fi
+	# Output the left text, clipping it so that it doesn't overflow to the
+	# next line.
+	echo -n "${left_text:0:$vp_width}"
 
-	# The line number and column number.
-	echo -n "$(( cr + 1 )),$(( cc + 1 ))"
+	# Move to the optimal column position to output the right text.
+	local right_text_col=$(( $vp_width - ${#right_text} ))
+	(( right_text_col < 0 )) && right_text_col=0
+	tput cup $vp_height $right_text_col
 
-	# The tab-expanded column number.
-	tab_expand_col
-	echo -n "-$(( tab_expand_col_v + 1 ))"
-
-	# The selection anchor position.
-	if (( selection_exists )); then
-		echo -n " $(( sr + 1 )),$(( sc + 1 ))"
-		tab_expand_col $sr $sc
-		echo -n "-$(( tab_expand_col_v + 1 ))"
-	fi
+	# Output the right text.
+	echo -n "${right_text:0:$vp_width}"
 }
 
 # Initialize the display.
@@ -1248,6 +1258,7 @@ file_ask_filename() {
 		[ "${file_path}" ] && break
 		echo 'No filename entered.'
 	done
+	draw_all_flag=1
 	terminal_editing
 }
 
