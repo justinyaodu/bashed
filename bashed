@@ -391,6 +391,8 @@ cursor_end() {
 	cursor_move $new_r ${#lines[$new_r]}
 }
 
+# cursor_up [lines]
+# Move the cursor upward by the specified number of lines (default 1).
 cursor_up() {
 	if (( !mode_selecting && selection_exists )); then
 		selection_deselect 'start'
@@ -399,8 +401,9 @@ cursor_up() {
 
 	# Is there a line above?
 	if (( cr > 0 )); then
-		# Row index of the line above.
-		local new_r=$(( cr - 1 ))
+		# Row index of the destination line.
+		local new_r=$(( cr - ${1:-1} ))
+		new_r=$(( new_r < 0 ? 0 : new_r ))
 
 		# Compute the current cursor position's tab expanded column.
 		tab_expand_col
@@ -415,6 +418,8 @@ cursor_up() {
 	fi
 }
 
+# cursor_down [lines]
+# Move the cursor downward by the specified number of lines (default 1).
 cursor_down() {
 	if (( !mode_selecting && selection_exists )); then
 		selection_deselect 'end'
@@ -423,8 +428,9 @@ cursor_down() {
 
 	# Is there a line below?
 	if (( cr + 1 < ${#lines[@]} )); then
-		# Row index of the line below.
-		local new_r=$(( cr + 1 ))
+		# Row index of the destination line.
+		local new_r=$(( cr + ${1:-1} ))
+		new_r=$(( new_r >= ${#lines[@]} ? ${#lines[@]} - 1 : new_r ))
 
 		# See comments in cursor_up.
 		tab_expand_col
@@ -1088,6 +1094,12 @@ event_input() {
 			;;
 		Down)
 			cursor_down
+			;;
+		PageUp)
+			cursor_up $(( vp_height - 1 ))
+			;;
+		PageDown)
+			cursor_down $(( vp_height - 1 ))
 			;;
 		Left)
 			cursor_left
