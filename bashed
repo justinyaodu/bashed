@@ -1358,6 +1358,7 @@ file_ask_filename() {
 
 help_show() {
 	terminal_normal
+	clear
 
 	cat <<EOF
 +----- Cursor Movement -----+------ Editor ------+
