@@ -1021,7 +1021,7 @@ $(( tab_expand_col_v + 1 ))"
 		left_text="${draw_message_pending}"
 		draw_message_pending=''
 	else
-		left_text="${file_path}"
+		left_text="${file_path:-[new buffer]}"
 	fi
 
 	# Add a space to provide visual separation if this cuts off the text
