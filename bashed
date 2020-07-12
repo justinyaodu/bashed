@@ -1162,6 +1162,9 @@ event_input() {
 		Y)
 			clipboard_copy
 			;;
+		_) # Sent by Ctrl+/.
+			help_show
+			;;
 	esac
 }
 
@@ -1229,6 +1232,70 @@ file_ask_filename() {
 		echo 'No filename entered.'
 	done
 	terminal_editing
+}
+
+######## Help Screen ########
+
+help_show() {
+	terminal_normal
+
+	cat <<EOF
+====================== Cursor Movement =====================
+
+arrow keys	Move one character in that direction
+Home		Beginning of line
+End		End of line
+Ctrl+Home	Beginning of file
+Ctrl+End	End of file
+
+If any text is selected, the cursor will move to the
+appropriate end of the selection.
+
+========================= Selection ========================
+
+Hold Shift while moving the cursor.
+
+========================= Insertion ========================
+
+Enter		Insert a line break
+Tab		Insert a tab character
+(other keys)	Insert the character you typed
+
+If any text is selected, the selection will be replaced.
+
+========================= Deletion =========================
+
+Backspace	Delete one character to the left
+Delete		Delete one character to the right
+
+If any text is selected, the selection will be deleted
+instead.
+
+====================== Editor Commands =====================
+
+Ctrl+A		Select all
+
+Ctrl+X		Cut
+Ctrl+Y		Copy
+Ctrl+V		Paste
+
+Ctrl+P		Save
+Ctrl+D		Exit
+Ctrl+/		Show this help screen
+
+======================== Other Notes =======================
+
+Some commands using the Ctrl and Shift modifiers will not
+work in the Linux console.
+
+Press any key to continue...
+EOF
+
+	local char
+	$read_char char
+
+	terminal_editing
+	draw_all_flag=1
 }
 
 ######## Main ########
