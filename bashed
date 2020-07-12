@@ -1027,7 +1027,11 @@ $(( tab_expand_col_v + 1 ))"
 		left_text="${draw_message_pending}"
 		draw_message_pending=''
 	else
-		left_text="${file_path:-[new buffer]}"
+		if [ "${file_path}" ]; then
+			left_text="\"${file_path}\""
+		else
+			left_text='[new buffer]'
+		fi
 	fi
 
 	# Show whether the file has been modified.
