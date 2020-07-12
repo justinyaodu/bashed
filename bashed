@@ -260,7 +260,9 @@ terminal_normal() {
 
 	# Move the cursor to the bottom of the display.
 	tput cup $vp_height 0
-	echo
+
+	# Clear the status line.
+	echo -n "${tput_el}"
 }
 
 ######## Tab Expansion and Column Conversion ########
@@ -1202,6 +1204,12 @@ event_input() {
 		D)
 			exit 0
 			;;
+		N)
+			file_new
+			;;
+		O)
+			file_open
+			;;
 		P)
 			file_save
 			;;
@@ -1222,6 +1230,7 @@ event_input() {
 
 event_exit() {
 	terminal_normal
+	echo
 }
 
 event_tstp() {
@@ -1268,6 +1277,7 @@ file_init() {
 
 	if [ -e "${file_path}" ]; then
 		readarray -t lines <<< "$(<"${file_path}")"
+		draw_message "Opened file \"${file_path}\"".
 	else
 		lines=('')
 	fi
@@ -1281,7 +1291,7 @@ file_init() {
 
 # Save the current buffer.
 file_save() {
-	[ -z "${file_path}" ] && file_ask_filename
+	[ -z "${file_path}" ] && file_ask_filename 'save'
 
 	printf '%s\n' "${lines[@]}" > "${file_path}"
 
@@ -1290,11 +1300,49 @@ file_save() {
 	file_modified=0
 }
 
+# Create a new buffer.
+file_new() {
+	file_ask_save_if_necessary
+	file_init
+}
+
+# Open an existing file.
+file_open() {
+	file_ask_save_if_necessary
+	file_ask_filename 'open'
+	file_init "${file_path}"
+}
+
+# If the file has been modified, ask if the user wants to save it.
+file_ask_save_if_necessary() {
+	(( file_modified )) || return
+
+	terminal_normal
+	local response
+	while :; do
+		read -r -p 'Save the current file? [Y/n] ' response
+		case "${response}" in
+			[yY]|[yY][eE][sS]|'')
+				file_save
+				return
+				;;
+			[nN]|[nN][oO])
+				return
+				;;
+			*)
+				echo 'Invalid input.'
+				;;
+		esac
+	done
+	terminal_editing
+}
+
+# file_ask_filename <reason>
 # Prompt the user to select a file.
 file_ask_filename() {
 	terminal_normal
 	while :; do
-		read -er -p 'Enter filename: ' file_path
+		read -er -p "Enter filename to ${1}: " file_path
 		[ "${file_path}" ] && break
 		echo 'No filename entered.'
 	done
@@ -1313,9 +1361,11 @@ help_show() {
 | Home      : start of line | Ctrl+X: cut        |
 | End       : end of line   | Ctrl+Y: copy       |
 | PageUp    : one page up   | Ctrl+V: paste      |
-| PageDown  : one page down | Ctrl+P: save       |
-| Ctrl+Home : start of file | Ctrl+D: exit       |
-| Ctrl+End  : end of file   | Ctrl+/: show help  |
+| PageDown  : one page down | Ctrl+N: new file   |
+| Ctrl+Home : start of file | Ctrl+O: open file  |
+| Ctrl+End  : end of file   | Ctrl+P: save file  |
+|                           | Ctrl+D: exit       |
+|                           | Ctrl+/: show help  |
 +---------------------------+--------------------+
 
 XTerm-compatible only: to move by words, hold Ctrl.
