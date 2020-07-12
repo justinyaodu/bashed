@@ -1273,6 +1273,8 @@ file_save() {
 	[ -z "${file_path}" ] && file_ask_filename
 
 	printf '%s\n' "${lines[@]}" > "${file_path}"
+
+	draw_message "Saved file \"${file_path}\"."
 }
 
 # Prompt the user to select a file.
