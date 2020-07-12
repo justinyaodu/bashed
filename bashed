@@ -1206,6 +1206,7 @@ event_input() {
 			cursor_end
 			;;
 		D)
+			file_ask_save_if_necessary
 			exit 0
 			;;
 		N)
