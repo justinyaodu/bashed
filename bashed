@@ -1252,53 +1252,19 @@ help_show() {
 	terminal_normal
 
 	cat <<EOF
-====================== Cursor Movement =====================
++----- Cursor Movement -----+------ Editor ------+
+| Arrow keys: move cursor   | Ctrl+A: select all |
+| Home      : start of line | Ctrl+X: cut        |
+| End       : end of line   | Ctrl+Y: copy       |
+| PageUp    : one page up   | Ctrl+V: paste      |
+| PageDown  : one page down | Ctrl+P: save       |
+| Ctrl+Home : start of file | Ctrl+D: exit       |
+| Ctrl+End  : end of file   | Ctrl+/: show help  |
++---------------------------+--------------------+
 
-arrow keys	Move one character in that direction
-Home		Beginning of line
-End		End of line
-Ctrl+Home	Beginning of file
-Ctrl+End	End of file
-
-If any text is selected, the cursor will move to the
-appropriate end of the selection.
-
-========================= Selection ========================
-
-Hold Shift while moving the cursor.
-
-========================= Insertion ========================
-
-Enter		Insert a line break
-Tab		Insert a tab character
-(other keys)	Insert the character you typed
-
-If any text is selected, the selection will be replaced.
-
-========================= Deletion =========================
-
-Backspace	Delete one character to the left
-Delete		Delete one character to the right
-
-If any text is selected, the selection will be deleted
-instead.
-
-====================== Editor Commands =====================
-
-Ctrl+A		Select all
-
-Ctrl+X		Cut
-Ctrl+Y		Copy
-Ctrl+V		Paste
-
-Ctrl+P		Save
-Ctrl+D		Exit
-Ctrl+/		Show this help screen
-
-======================== Other Notes =======================
-
-Some commands using the Ctrl and Shift modifiers will not
-work in the Linux console.
+XTerm-compatible only: to move by words, hold Ctrl.
+To select text, hold Shift while moving the cursor.
+(Does not work with PageUp/PageDown.)
 
 Press any key to continue...
 EOF
