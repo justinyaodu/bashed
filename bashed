@@ -1218,11 +1218,20 @@ event_cont() {
 	draw
 }
 
+event_winch() {
+	viewport_update_dimensions
+	draw_all_flag=1
+	# The display is not updated immediately on resize, which may be because
+	# the signal handler is not called until after the next keystroke is
+	# read in the main loop.
+}
+
 # Register signal handlers.
 event_init() {
 	trap event_exit EXIT
 	trap event_tstp TSTP
 	trap event_cont CONT
+	trap event_winch WINCH
 }
 
 ######## File Operations ########
