@@ -7,7 +7,7 @@
 ## Features
 
 * **Standard cursor movement controls**
-  * Move the cursor using the arrow keys, <key>Home</key>, and <key>End</key>
+  * Move the cursor using the arrow keys, <key>Home</key>, <key>End</key>, <key>PgUp</key>, <key>PgDn</key>
   * Move by words by holding <key>Ctrl</key>*
 * **Select text** by holding <key>Shift</key>*
 * **Clipboard functionality:** cut, copy, and paste
