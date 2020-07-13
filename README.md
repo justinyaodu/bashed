@@ -2,6 +2,8 @@
 
 `bashed` is a command-line text editor written in Bash. In terms of functionality, it's comparable to Windows Notepad or an HTML `<textarea>`.
 
+![bashed demonstration](demo.gif)
+
 ## Features
 
 * **Standard cursor movement controls**
